@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <string.h> // for memset
+#include <string.h>
 
 #include <sys/types.h> // socket man pages say we need this
 #include <sys/socket.h>
