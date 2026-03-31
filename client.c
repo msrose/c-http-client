@@ -13,33 +13,42 @@
 
 int main(void) {
   int sock = socket(PF_INET, SOCK_STREAM, 0);
-  assert(sock >= 0 && "Failed to create socket");
+  if (sock < 0) {
+    perror("socket");
+    return 1;
+  }
 
   struct sockaddr_in client = {
     .sin_family = AF_INET,
     .sin_port = htons(0) // any port
   };
   inet_aton("127.0.0.1", &client.sin_addr);
-  int bind_result = bind(sock, (struct sockaddr*)&client, sizeof(struct sockaddr_in));
-  assert(bind_result >= 0 && "Failed to bind");
+  if (bind(sock, (struct sockaddr*)&client, sizeof(struct sockaddr_in)) < 0) {
+    perror("bind");
+    return 1;
+  }
 
   struct sockaddr_in server = {
     .sin_family = AF_INET,
     .sin_port = htons(3002)
   };
   inet_aton("127.0.0.1", &server.sin_addr);
-
-  int connect_result = connect(sock, (struct sockaddr*)&server, sizeof(struct sockaddr_in));
-  assert(connect_result >= 0 && "Failed to connect");
+  if (connect(sock, (struct sockaddr*)&server, sizeof(struct sockaddr_in))) {
+    perror("connect");
+    return 1;
+  }
 
   char* message = "POST /client HTTP/1.1\r\nHost: 127.0.0.1:3002\r\nTransfer-Encoding: chunked\r\n\r\n7\r\nsupdawg\r\n0\r\n\r\n";
 
   unsigned long bytes_sent = 0;
   while (bytes_sent < strlen(message)) {
-    int sent_result = send(sock, message + bytes_sent, strlen(message) - bytes_sent, 0);
-    printf("Sent %d bytes\n", sent_result);
-    assert(sent_result >= 0 && "Failed to send");
-    bytes_sent += sent_result;
+    int sent_count = send(sock, message + bytes_sent, strlen(message) - bytes_sent, 0);
+    if (sent_count < 0) {
+      perror("send");
+      return 1;
+    }
+    fprintf(stderr, "Sent %d bytes\n", sent_count);
+    bytes_sent += sent_count;
   }
 
   // Pad by one to make sure the response is always null-terminated
@@ -58,17 +67,30 @@ int main(void) {
   ) {
     assert(bytes_received < MAX_RECV_BYTES && "Too many bytes received!");
 
-    int recv_result = recv(sock, response + bytes_received, MAX_RECV_BYTES - bytes_received, 0);
-    assert(recv_result >= 0 && "Failed to recv");
+    int recv_count = recv(sock, response + bytes_received, MAX_RECV_BYTES - bytes_received, 0);
+    if (recv_count < 0) {
+      perror("recv");
+      return 1;
+    }
+    if (recv_count == 0) {
+      fprintf(stderr, "Server closed connection");
+      break;
+    }
 
-    printf("Got %d bytes, full res is\n===\n%s===\n", recv_result, response);
-    bytes_received += recv_result;
+    fprintf(stderr, "Got %d bytes\n", recv_count);
+    bytes_received += recv_count;
   }
 
-  int close_result = close(sock);
-  assert(close_result >= 0 && "Failed to close");
+  fprintf(stderr, "===\n");
+  printf("%s", response);
+  fprintf(stderr, "===\n");
 
-  printf("Closed.\n");
+  if (close(sock) < 0) {
+    perror("close");
+    return 1;
+  }
+
+  fprintf(stderr, "Closed.\n");
 
   return 0;
 }
