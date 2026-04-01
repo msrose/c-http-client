@@ -45,6 +45,8 @@ int main(void) {
     "\r\n"
     "7\r\n"
     "supdawg\r\n"
+    "a\r\n"
+    "in da haus\r\n"
     "0\r\n"
     "\r\n";
 

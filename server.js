@@ -6,7 +6,9 @@ const server = http.createServer((req, res) => {
   console.log(`Got a req: ${req.method} ${req.url}`);
   let body = ""
   req.on("data", (data) => {
-    body += data.toString()
+    const str = data.toString()
+    console.log("Got a chunk:", str)
+    body += str
   })
   req.on("end", () => {
     res.setHeader("content-type", "application/json");
@@ -20,7 +22,7 @@ const server = http.createServer((req, res) => {
   })
 })
 
-server.on('connection', (socket) => {
+server.on("connection", (socket) => {
   console.log(
     "Got a socket connection",
     `${socket.remoteAddress}:${socket.remotePort} (${socket.remoteFamily})`
