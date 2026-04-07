@@ -23,10 +23,11 @@ const server = http.createServer((req, res) => {
 })
 
 server.on("connection", (socket) => {
-  console.log(
-    "Got a socket connection",
-    `${socket.remoteAddress}:${socket.remotePort} (${socket.remoteFamily})`
-  )
+  const info = `${socket.remoteAddress}:${socket.remotePort} (${socket.remoteFamily})`
+  console.log("Got a socket connection", info)
+  socket.on("close", () => {
+    console.log("Socket connection was closed", info)
+  })
 })
 
 server.listen(PORT, () => {
