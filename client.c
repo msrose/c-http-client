@@ -11,6 +11,8 @@
 
 #define MAX_RECV_BYTES 1000
 
+#define pstderr(...) fprintf(stderr, __VA_ARGS__);
+
 int main(void) {
   int sock = socket(PF_INET, SOCK_STREAM, 0);
   if (sock < 0) {
@@ -57,7 +59,7 @@ int main(void) {
       perror("send");
       return 1;
     }
-    fprintf(stderr, "Sent %d bytes\n", sent_count);
+    pstderr("Sent %d bytes\n", sent_count);
     bytes_sent += sent_count;
   }
 
@@ -78,24 +80,24 @@ int main(void) {
       return 1;
     }
     if (recv_count == 0) {
-      fprintf(stderr, "Server closed connection\n");
+      pstderr("Server closed connection\n");
       break;
     }
 
-    fprintf(stderr, "Got %d bytes\n", recv_count);
+    pstderr("Got %d bytes\n", recv_count);
     bytes_received += recv_count;
   }
 
-  fprintf(stderr, "===\n");
+  pstderr("===\n");
   printf("%s", response);
-  fprintf(stderr, "===\n");
+  pstderr("===\n");
 
   if (close(sock) < 0) {
     perror("close");
     return 1;
   }
 
-  fprintf(stderr, "Closed.\n");
+  pstderr("Closed.\n");
 
   return 0;
 }
