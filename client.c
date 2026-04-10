@@ -11,7 +11,7 @@
 
 #define MAX_RECV_BYTES 1000
 
-#define pstderr(...) fprintf(stderr, __VA_ARGS__);
+#define pstderr(...) fprintf(stderr, __VA_ARGS__)
 
 int main(void) {
   int sock = socket(PF_INET, SOCK_STREAM, 0);
