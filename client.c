@@ -9,15 +9,13 @@
 #include <assert.h>
 #include <errno.h>
 
-#define MAX_RECV_BYTES 1000
+#define debug(...) fprintf(stderr, __VA_ARGS__)
 
-#define pstderr(...) fprintf(stderr, __VA_ARGS__)
-
-int main(void) {
-  int sock = socket(PF_INET, SOCK_STREAM, 0);
-  if (sock < 0) {
-    perror("socket");
-    return 1;
+int open_connection(char* address, short port) {
+  int fd = socket(PF_INET, SOCK_STREAM, 0);
+  if (fd < 0) {
+    debug("socket failed");
+    return -1;
   }
 
   struct sockaddr_in client = {
@@ -25,24 +23,95 @@ int main(void) {
     .sin_port = htons(0) // any port
   };
   inet_aton("127.0.0.1", &client.sin_addr);
-  if (bind(sock, (struct sockaddr*)&client, sizeof(struct sockaddr_in)) < 0) {
-    perror("bind");
-    return 1;
+  if (bind(fd, (struct sockaddr*)&client, sizeof(client)) < 0) {
+    debug("bind failed");
+    return -1;
   }
 
   struct sockaddr_in server = {
     .sin_family = AF_INET,
-    .sin_port = htons(3002)
+    .sin_port = htons(port)
   };
-  inet_aton("127.0.0.1", &server.sin_addr);
-  if (connect(sock, (struct sockaddr*)&server, sizeof(struct sockaddr_in))) {
-    perror("connect");
-    return 1;
+  inet_aton(address, &server.sin_addr);
+  if (connect(fd, (struct sockaddr*)&server, sizeof(server))) {
+    debug("connect failed");
+    return -1;
   }
 
-  char* message =
-    "POST /client HTTP/1.1\r\n"
-    "Host: 127.0.0.1:3002\r\n"
+  socklen_t addr_len = sizeof(client);
+  if (getsockname(fd, (struct sockaddr*)&client, &addr_len) < 0) {
+    debug("getsockname failed");
+    return -1;
+  }
+  debug("Opened connection to %s:%d on port %d\n", address, port, ntohs(client.sin_port));
+
+  return fd;
+}
+
+int send_message(int fd, char* message, size_t size) {
+  unsigned int bytes_sent = 0;
+
+  while (bytes_sent < size) {
+    int sent_count = send(fd, message + bytes_sent, strlen(message) - bytes_sent, 0);
+    if (sent_count < 0) {
+      return sent_count;
+    }
+    debug("Sent %d bytes\n", sent_count);
+    bytes_sent += sent_count;
+  }
+
+  return bytes_sent;
+}
+
+int recv_message(int fd, char* buffer, size_t buffer_size, int (*finished)(char*, size_t)) {
+  size_t bytes_received = 0;
+
+  while (!finished(buffer, bytes_received)) {
+    assert(bytes_received < buffer_size && "Too many bytes received!");
+
+    int recv_count = recv(fd, buffer + bytes_received, buffer_size - bytes_received, 0);
+    if (recv_count < 0) {
+      return -1;
+    }
+    if (recv_count == 0) {
+      debug("Server closed connection\n");
+      break;
+    }
+
+    debug("Got %d bytes\n", recv_count);
+    bytes_received += recv_count;
+  }
+
+  return bytes_received;
+}
+
+#define MESSAGE_COUNT 2
+#define MAX_RECV_BYTES 1000
+#define SERVER_ADDRESS "127.0.0.1"
+#define SERVER_PORT 3002
+#define HOST_HEADER "Host: 127.0.0.1:3002\r\n"
+
+// Assume transfer-encoding: chunked
+int is_response_finished(char* buffer, size_t bytes_received) {
+  // 0-byte last chunk for transfer-encoding: chunked
+  char* last_chunk = "0\r\n\r\n";
+  size_t last_chunk_len = strlen(last_chunk);
+  return memcmp(buffer + bytes_received - last_chunk_len, last_chunk, last_chunk_len) == 0;
+}
+
+void print_bytes(char* buffer, size_t size) {
+  for (size_t i = 0; i < size; i++) {
+    printf("%c", buffer[i]);
+  }
+}
+
+int main(void) {
+  // Don't buffer writes to sdout, so that stderr/stdout ordering is consistent
+  setbuf(stdout, NULL);
+
+  char* message1 =
+    "POST /my-post-req HTTP/1.1\r\n"
+    HOST_HEADER
     "Transfer-Encoding: chunked\r\n"
     "\r\n"
     "7\r\n"
@@ -52,52 +121,50 @@ int main(void) {
     "0\r\n"
     "\r\n";
 
-  unsigned long bytes_sent = 0;
-  while (bytes_sent < strlen(message)) {
-    int sent_count = send(sock, message + bytes_sent, strlen(message) - bytes_sent, 0);
-    if (sent_count < 0) {
-      perror("send");
+  char* message2 =
+    "GET /my-get-req HTTP/1.1\r\n"
+    HOST_HEADER
+    "\r\n";
+
+  char* messages[MESSAGE_COUNT] = {
+    message1,
+    message2
+  };
+
+  for (int i = 0; i < MESSAGE_COUNT; i++) {
+    int fd = open_connection(SERVER_ADDRESS, SERVER_PORT);
+    if (fd < 0) {
+      perror("open_connection");
       return 1;
     }
-    pstderr("Sent %d bytes\n", sent_count);
-    bytes_sent += sent_count;
-  }
 
-  // Pad by one to make sure the response is always null-terminated
-  char response[MAX_RECV_BYTES + 1] = {0};
-  int bytes_received = 0;
-
-  // 0-byte last chunk for transfer-encoding: chunked
-  char* last_chunk = "0\r\n\r\n";
-
-  // strcmp works because we ensure the response buffer is always null terminated
-  while (strcmp(response + bytes_received - strlen(last_chunk), last_chunk) != 0) {
-    assert(bytes_received < MAX_RECV_BYTES && "Too many bytes received!");
-
-    int recv_count = recv(sock, response + bytes_received, MAX_RECV_BYTES - bytes_received, 0);
-    if (recv_count < 0) {
-      perror("recv");
+    char* message = messages[i];
+    int bytes_sent = send_message(fd, message, strlen(message));
+    if (bytes_sent < 0) {
+      perror("send_message");
       return 1;
     }
-    if (recv_count == 0) {
-      pstderr("Server closed connection\n");
-      break;
+
+    char response[MAX_RECV_BYTES] = {0};
+
+    // Assume transfer-encoding: chunked
+    int bytes_received = recv_message(fd, response, MAX_RECV_BYTES, is_response_finished);
+    if (bytes_received < 0) {
+      perror("recv_message");
+      return 1;
     }
 
-    pstderr("Got %d bytes\n", recv_count);
-    bytes_received += recv_count;
+    debug("===\n");
+    print_bytes(response, bytes_received);
+    debug("\n===\n");
+
+    if (close(fd) < 0) {
+      perror("close");
+      return 1;
+    }
+
+    debug("Closed.\n");
   }
-
-  pstderr("===\n");
-  printf("%s", response);
-  pstderr("===\n");
-
-  if (close(sock) < 0) {
-    perror("close");
-    return 1;
-  }
-
-  pstderr("Closed.\n");
 
   return 0;
 }
