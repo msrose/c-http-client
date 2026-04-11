@@ -52,7 +52,7 @@ int send_message(int fd, char* message, size_t size) {
   unsigned int bytes_sent = 0;
 
   while (bytes_sent < size) {
-    int sent_count = send(fd, message + bytes_sent, strlen(message) - bytes_sent, 0);
+    int sent_count = send(fd, message + bytes_sent, size - bytes_sent, 0);
     if (sent_count < 0) {
       return sent_count;
     }
@@ -85,7 +85,6 @@ int recv_message(int fd, char* buffer, size_t buffer_size, int (*finished)(char*
   return bytes_received;
 }
 
-#define MESSAGE_COUNT 2
 #define MAX_RECV_BYTES 1000
 #define SERVER_ADDRESS "127.0.0.1"
 #define SERVER_PORT 3002
@@ -105,41 +104,61 @@ void print_bytes(char* buffer, size_t size) {
   }
 }
 
+typedef struct {
+  char* data;
+  size_t size;
+} Message;
+
 int main(void) {
   // Don't buffer writes to sdout, so that stderr/stdout ordering is consistent
   setbuf(stdout, NULL);
 
-  char* message1 =
-    "POST /my-post-req HTTP/1.1\r\n"
-    HOST_HEADER
-    "Transfer-Encoding: chunked\r\n"
-    "\r\n"
-    "7\r\n"
-    "supdawg\r\n"
-    "a\r\n"
-    "in da haus\r\n"
-    "0\r\n"
-    "\r\n";
-
-  char* message2 =
-    "GET /my-get-req HTTP/1.1\r\n"
-    HOST_HEADER
-    "\r\n";
-
-  char* messages[MESSAGE_COUNT] = {
-    message1,
-    message2
+  Message message1 = {
+    .data = "POST /my-post-req HTTP/1.1\r\n"
+            HOST_HEADER
+            "Transfer-Encoding: chunked\r\n"
+            "\r\n"
+            "7\r\n"
+            "supdawg\r\n"
+            "a\r\n"
+            "in da haus\r\n"
+            "0\r\n"
+            "\r\n",
+    .size = strlen(message1.data)
   };
 
-  for (int i = 0; i < MESSAGE_COUNT; i++) {
+  Message message2 = {
+    .data = "GET /my-get-req HTTP/1.1\r\n"
+            HOST_HEADER
+            "\r\n",
+    .size = strlen(message2.data)
+  };
+
+  Message message3 = {
+    .data = "POST /my-message-with-null\r\n"
+            HOST_HEADER
+            "Content-Length: 11\r\n"
+            "\r\n"
+            "here we\0are"
+            "\r\n",
+    .size = strlen(message3.data) + 6 // data contains a null byte
+  };
+
+  Message messages[] = {
+    message1,
+    message2,
+    message3,
+  };
+
+  for (unsigned long i = 0; i < sizeof(messages) / sizeof(Message); i++) {
     int fd = open_connection(SERVER_ADDRESS, SERVER_PORT);
     if (fd < 0) {
       perror("open_connection");
       return 1;
     }
 
-    char* message = messages[i];
-    int bytes_sent = send_message(fd, message, strlen(message));
+    Message message = messages[i];
+    int bytes_sent = send_message(fd, message.data, message.size);
     if (bytes_sent < 0) {
       perror("send_message");
       return 1;
