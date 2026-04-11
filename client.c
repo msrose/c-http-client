@@ -17,6 +17,7 @@ int open_connection(char* address, short port) {
     debug("socket failed");
     return -1;
   }
+  debug("Created socket, descriptor is %d\n", fd);
 
   struct sockaddr_in client = {
     .sin_family = AF_INET,
@@ -27,6 +28,12 @@ int open_connection(char* address, short port) {
     debug("bind failed");
     return -1;
   }
+  socklen_t addr_len = sizeof(client);
+  if (getsockname(fd, (struct sockaddr*)&client, &addr_len) < 0) {
+    debug("getsockname failed");
+    return -1;
+  }
+  debug("Client bound to port %d\n", ntohs(client.sin_port));
 
   struct sockaddr_in server = {
     .sin_family = AF_INET,
@@ -37,13 +44,7 @@ int open_connection(char* address, short port) {
     debug("connect failed");
     return -1;
   }
-
-  socklen_t addr_len = sizeof(client);
-  if (getsockname(fd, (struct sockaddr*)&client, &addr_len) < 0) {
-    debug("getsockname failed");
-    return -1;
-  }
-  debug("Opened connection to %s:%d on port %d\n", address, port, ntohs(client.sin_port));
+  debug("Opened connection to %s:%d\n", address, port);
 
   return fd;
 }
@@ -151,6 +152,7 @@ int main(void) {
   };
 
   for (unsigned long i = 0; i < sizeof(messages) / sizeof(Message); i++) {
+    debug("Starting HTTP request\n");
     int fd = open_connection(SERVER_ADDRESS, SERVER_PORT);
     if (fd < 0) {
       perror("open_connection");
@@ -166,7 +168,6 @@ int main(void) {
 
     char response[MAX_RECV_BYTES] = {0};
 
-    // Assume transfer-encoding: chunked
     int bytes_received = recv_message(fd, response, MAX_RECV_BYTES, is_response_finished);
     if (bytes_received < 0) {
       perror("recv_message");
@@ -182,7 +183,7 @@ int main(void) {
       return 1;
     }
 
-    debug("Closed.\n");
+    debug("Closed.\n\n");
   }
 
   return 0;
